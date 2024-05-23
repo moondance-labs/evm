@@ -209,7 +209,7 @@ pub trait StackState<'config>: Backend {
 	fn reset_storage(&mut self, address: H160);
 	fn log(&mut self, address: H160, topics: Vec<H256>, data: Vec<u8>);
 	fn set_deleted(&mut self, address: H160);
-	fn set_code(&mut self, address: H160, code: Vec<u8>);
+	fn set_code(&mut self, address: H160, code: Vec<u8>, caller: Option<H160>) -> Result<(), ExitError>;
 	fn transfer(&mut self, transfer: Transfer) -> Result<(), ExitError>;
 	fn reset_balance(&mut self, address: H160);
 	fn touch(&mut self, address: H160);
@@ -324,7 +324,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 			kind: RuntimeKind::Execute,
 			inner: MaybeBorrowed::Borrowed(runtime),
 		});
-		let (reason, _, _) = self.execute_with_call_stack(&mut call_stack);
+		let (reason, _, _) = self.execute_with_call_stack(&mut call_stack, None);
 		reason
 	}
 
@@ -332,6 +332,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 	fn execute_with_call_stack(
 		&mut self,
 		call_stack: &mut Vec<TaggedRuntime<'_>>,
+		caller: Option<H160>,
 	) -> (ExitReason, Option<H160>, Vec<u8>) {
 		// This `interrupt_runtime` is used to pass the runtime obtained from the
 		// `Capture::Trap` branch in the match below back to the top of the call stack.
@@ -375,6 +376,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 						created_address,
 						reason,
 						runtime.inner.machine().return_value(),
+						caller,
 					);
 					(reason, maybe_address, return_data)
 				}
@@ -483,7 +485,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 			Capture::Trap(rt) => {
 				let mut cs = Vec::with_capacity(DEFAULT_CALL_STACK_CAPACITY);
 				cs.push(rt.0);
-				let (s, _, v) = self.execute_with_call_stack(&mut cs);
+				let (s, _, v) = self.execute_with_call_stack(&mut cs, None);
 				emit_exit!(s, v)
 			}
 		}
@@ -541,7 +543,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 			Capture::Trap(rt) => {
 				let mut cs = Vec::with_capacity(DEFAULT_CALL_STACK_CAPACITY);
 				cs.push(rt.0);
-				let (s, _, v) = self.execute_with_call_stack(&mut cs);
+				let (s, _, v) = self.execute_with_call_stack(&mut cs, None);
 				emit_exit!(s, v)
 			}
 		}
@@ -623,7 +625,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 			Capture::Trap(rt) => {
 				let mut cs = Vec::with_capacity(DEFAULT_CALL_STACK_CAPACITY);
 				cs.push(rt.0);
-				let (s, _, v) = self.execute_with_call_stack(&mut cs);
+				let (s, _, v) = self.execute_with_call_stack(&mut cs, Some(caller));
 				emit_exit!(s, v)
 			}
 		}
@@ -972,6 +974,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 		created_address: H160,
 		reason: ExitReason,
 		return_data: Vec<u8>,
+		caller: Option<H160>
 	) -> (ExitReason, Option<H160>, Vec<u8>) {
 		fn check_first_byte(config: &Config, code: &[u8]) -> Result<(), ExitError> {
 			if config.disallow_executable_format && Some(&Opcode::EOFMAGIC.as_u8()) == code.first()
@@ -1015,7 +1018,10 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 						) {
 							return (e.into(), None, Vec::new());
 						}
-						self.state.set_code(address, out);
+						let set_code_result = self.state.set_code(address, out, caller);
+						if let Err(e) = set_code_result {
+							return (e.into(), None, Vec::new());
+						}
 						if let Err(e) = exit_result {
 							return (e.into(), None, Vec::new());
 						}
@@ -1445,7 +1451,7 @@ impl<'inner, 'config, 'precompiles, S: StackState<'config>, P: PrecompileSet> Pr
 				let mut call_stack = Vec::with_capacity(DEFAULT_CALL_STACK_CAPACITY);
 				call_stack.push(rt.0);
 				let (reason, _, return_data) =
-					self.executor.execute_with_call_stack(&mut call_stack);
+					self.executor.execute_with_call_stack(&mut call_stack, None);
 				emit_exit!(reason, return_data)
 			}
 		}
