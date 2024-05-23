@@ -539,8 +539,9 @@ impl<'backend, 'config, B: Backend> StackState<'config> for MemoryStackState<'ba
 		self.substate.set_deleted(address)
 	}
 
-	fn set_code(&mut self, address: H160, code: Vec<u8>) {
+	fn set_code(&mut self, address: H160, code: Vec<u8>, _caller: Option<H160>) -> Result<(), ExitError> {
 		self.substate.set_code(address, code, self.backend);
+		Ok(())
 	}
 
 	fn transfer(&mut self, transfer: Transfer) -> Result<(), ExitError> {
