@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 auto_impl = "1.0"
-ethereum = { git = "https://github.com/CESSProject/ethereum.git", rev = "c2c8281eeee9eee11bb9b86f98e08a6aeae944a2" }
+ethereum = { git = "https://github.com/CESSProject/ethereum.git", rev = "c2c8281eeee9eee11bb9b86f98e08a6aeae944a2", default-features = false }
 log = { version = "0.4", default-features = false }
 primitive-types = { version = "0.13", default-features = false, features = ["rlp"] }
 rlp = { version = "0.6", default-features = false }
