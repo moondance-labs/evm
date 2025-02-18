@@ -201,11 +201,13 @@ pub trait StackState<'config>: Backend {
 
 	fn is_empty(&self, address: H160) -> bool;
 	fn deleted(&self, address: H160) -> bool;
+	fn created(&self, address: H160) -> bool;
 	fn is_cold(&self, address: H160) -> bool;
 	fn is_storage_cold(&self, address: H160, key: H256) -> bool;
 
 	fn inc_nonce(&mut self, address: H160) -> Result<(), ExitError>;
 	fn set_storage(&mut self, address: H160, key: H256, value: H256);
+	fn set_transient_storage(&mut self, address: H160, key: H256, value: H256);
 	fn reset_storage(&mut self, address: H160);
 	fn log(&mut self, address: H160, topics: Vec<H256>, data: Vec<u8>);
 	fn set_deleted(&mut self, address: H160);
@@ -381,9 +383,9 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 					(reason, maybe_address, return_data)
 				}
 				RuntimeKind::Call(code_address) => {
-					let return_data = self.cleanup_for_call(
+					let (reason, return_data) = self.cleanup_for_call(
 						code_address,
-						&reason,
+						reason,
 						runtime.inner.machine().return_value(),
 					);
 					(reason, None, return_data)
@@ -671,7 +673,7 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 				let mut stream = rlp::RlpStream::new_list(2);
 				stream.append(&caller);
 				stream.append(&nonce);
-				H256::from_slice(Keccak256::digest(&stream.out()).as_slice()).into()
+				H256::from_slice(Keccak256::digest(stream.out()).as_slice()).into()
 			}
 			CreateScheme::Fixed(naddress) => naddress,
 		}
@@ -739,6 +741,8 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 		if let Err(e) = self.state.inc_nonce(caller) {
 			return Capture::Exit((e.into(), None, Vec::new()));
 		}
+
+		self.state.set_created(address);
 
 		let after_gas = if take_l64 && self.config.call_l64_after_gas {
 			if self.config.estimate {
@@ -933,7 +937,9 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 					exit_status,
 					output,
 				}) => {
-					let _ = self.exit_substate(StackExitKind::Succeeded);
+					if let Err(e) = self.exit_substate(StackExitKind::Succeeded) {
+						return Capture::Exit((e.into(), Vec::new()));
+					}
 					Capture::Exit((ExitReason::Succeed(exit_status), output))
 				}
 				Err(PrecompileFailure::Error { exit_status }) => {
@@ -1012,19 +1018,22 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 					.record_deposit(out.len())
 				{
 					Ok(()) => {
-						let exit_result = self.exit_substate(StackExitKind::Succeeded);
 						if let Err(e) = self.record_external_operation(
 							crate::ExternalOperation::Write(U256::from(out.len())),
 						) {
+							self.state.metadata_mut().gasometer.fail();
+							let _ = self.exit_substate(StackExitKind::Failed);
 							return (e.into(), None, Vec::new());
 						}
 						let set_code_result = self.state.set_code(address, out, caller);
 						if let Err(e) = set_code_result {
 							return (e.into(), None, Vec::new());
 						}
+						let exit_result = self.exit_substate(StackExitKind::Succeeded);
 						if let Err(e) = exit_result {
 							return (e.into(), None, Vec::new());
 						}
+						self.state.set_code(address, out);
 						(ExitReason::Succeed(s), Some(address), Vec::new())
 					}
 					Err(e) => {
@@ -1053,27 +1062,29 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 	fn cleanup_for_call(
 		&mut self,
 		code_address: H160,
-		reason: &ExitReason,
+		reason: ExitReason,
 		return_data: Vec<u8>,
-	) -> Vec<u8> {
+	) -> (ExitReason, Vec<u8>) {
 		log::debug!(target: "evm", "Call execution using address {}: {:?}", code_address, reason);
 		match reason {
 			ExitReason::Succeed(_) => {
-				let _ = self.exit_substate(StackExitKind::Succeeded);
-				return_data
+				if let Err(e) = self.exit_substate(StackExitKind::Succeeded) {
+					return (e.into(), Vec::new());
+				}
+				(reason, return_data)
 			}
 			ExitReason::Error(_) => {
 				let _ = self.exit_substate(StackExitKind::Failed);
-				Vec::new()
+				(reason, Vec::new())
 			}
 			ExitReason::Revert(_) => {
 				let _ = self.exit_substate(StackExitKind::Reverted);
-				return_data
+				(reason, return_data)
 			}
 			ExitReason::Fatal(_) => {
 				self.state.metadata_mut().gasometer.fail();
 				let _ = self.exit_substate(StackExitKind::Failed);
-				Vec::new()
+				(reason, Vec::new())
 			}
 		}
 	}
@@ -1082,8 +1093,8 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet>
 pub struct StackExecutorCallInterrupt<'borrow>(TaggedRuntime<'borrow>);
 pub struct StackExecutorCreateInterrupt<'borrow>(TaggedRuntime<'borrow>);
 
-impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet> Handler
-	for StackExecutor<'config, 'precompiles, S, P>
+impl<'config, S: StackState<'config>, P: PrecompileSet> Handler
+	for StackExecutor<'config, '_, S, P>
 {
 	type CreateInterrupt = StackExecutorCreateInterrupt<'static>;
 	type CreateFeedback = Infallible;
@@ -1112,6 +1123,10 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet> Handler
 
 	fn storage(&self, address: H160, index: H256) -> H256 {
 		self.state.storage(address, index)
+	}
+
+	fn transient_storage(&self, address: H160, index: H256) -> H256 {
+		self.state.transient_storage(address, index)
 	}
 
 	fn original_storage(&self, address: H160, index: H256) -> H256 {
@@ -1201,6 +1216,10 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet> Handler
 		Ok(())
 	}
 
+	fn set_transient_storage(&mut self, address: H160, index: H256, value: H256) {
+		self.state.set_transient_storage(address, index, value);
+	}
+
 	fn log(&mut self, address: H160, topics: Vec<H256>, data: Vec<u8>) -> Result<(), ExitError> {
 		self.state.log(address, topics, data);
 		Ok(())
@@ -1215,13 +1234,23 @@ impl<'config, 'precompiles, S: StackState<'config>, P: PrecompileSet> Handler
 			balance,
 		});
 
-		self.state.transfer(Transfer {
-			source: address,
-			target,
-			value: balance,
-		})?;
-		self.state.reset_balance(address);
-		self.state.set_deleted(address);
+		if self.config.has_eip_6780 && !self.state.created(address) {
+			if address != target {
+				self.state.transfer(Transfer {
+					source: address,
+					target,
+					value: balance,
+				})?;
+			}
+		} else {
+			self.state.transfer(Transfer {
+				source: address,
+				target,
+				value: balance,
+			})?;
+			self.state.reset_balance(address);
+			self.state.set_deleted(address);
+		}
 
 		Ok(())
 	}
@@ -1374,8 +1403,8 @@ struct StackExecutorHandle<'inner, 'config, 'precompiles, S, P> {
 	is_static: bool,
 }
 
-impl<'inner, 'config, 'precompiles, S: StackState<'config>, P: PrecompileSet> PrecompileHandle
-	for StackExecutorHandle<'inner, 'config, 'precompiles, S, P>
+impl<'config, S: StackState<'config>, P: PrecompileSet> PrecompileHandle
+	for StackExecutorHandle<'_, 'config, '_, S, P>
 {
 	// Perform subcall in provided context.
 	/// Precompile specifies in which context the subcall is executed.
