@@ -1,5 +1,5 @@
 use crate::Opcode;
-use alloc::borrow::Cow;
+use scale_codec::{Decode, DecodeWithMemTracking, Encode};
 
 /// Trap which indicates that an `ExternalOpcode` has to be handled.
 pub type Trap = Opcode;
@@ -15,7 +15,7 @@ pub enum Capture<E, T> {
 }
 
 /// Exit reason.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
 #[cfg_attr(
 	feature = "with-codec",
 	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
@@ -56,7 +56,7 @@ impl ExitReason {
 }
 
 /// Exit succeed reason.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
 #[cfg_attr(
 	feature = "with-codec",
 	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
@@ -78,7 +78,7 @@ impl From<ExitSucceed> for ExitReason {
 }
 
 /// Exit revert reason.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
 #[cfg_attr(
 	feature = "with-codec",
 	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
@@ -96,7 +96,7 @@ impl From<ExitRevert> for ExitReason {
 }
 
 /// Exit error reason.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
 #[cfg_attr(
 	feature = "with-codec",
 	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
@@ -154,7 +154,7 @@ pub enum ExitError {
 
 	/// Other normal errors.
 	#[cfg_attr(feature = "with-codec", codec(index = 13))]
-	Other(Cow<'static, str>),
+	Other(String),
 
 	/// Nonce reached maximum value of 2^64-1
 	/// https://eips.ethereum.org/EIPS/eip-2681
@@ -169,7 +169,7 @@ impl From<ExitError> for ExitReason {
 }
 
 /// Exit fatal reason.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
 #[cfg_attr(
 	feature = "with-codec",
 	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
@@ -184,7 +184,7 @@ pub enum ExitFatal {
 	CallErrorAsFatal(ExitError),
 
 	/// Other fatal errors.
-	Other(Cow<'static, str>),
+	Other(String),
 }
 
 impl From<ExitFatal> for ExitReason {

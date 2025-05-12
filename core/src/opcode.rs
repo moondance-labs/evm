@@ -1,5 +1,7 @@
+use scale_codec::{Decode, DecodeWithMemTracking, Encode};
+
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
 #[cfg_attr(
 	feature = "with-codec",
 	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
