@@ -1,5 +1,5 @@
 use crate::Opcode;
-use scale_codec::{Decode, DecodeWithMemTracking, Encode};
+use std::borrow::Cow;
 
 /// Trap which indicates that an `ExternalOpcode` has to be handled.
 pub type Trap = Opcode;
@@ -15,10 +15,15 @@ pub enum Capture<E, T> {
 }
 
 /// Exit reason.
-#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(
 	feature = "with-codec",
-	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
+	derive(
+		scale_codec::Encode,
+		scale_codec::Decode,
+		scale_codec::DecodeWithMemTracking,
+		scale_info::TypeInfo
+	)
 )]
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitReason {
@@ -56,10 +61,15 @@ impl ExitReason {
 }
 
 /// Exit succeed reason.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(
 	feature = "with-codec",
-	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
+	derive(
+		scale_codec::Encode,
+		scale_codec::Decode,
+		scale_codec::DecodeWithMemTracking,
+		scale_info::TypeInfo
+	)
 )]
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitSucceed {
@@ -78,10 +88,15 @@ impl From<ExitSucceed> for ExitReason {
 }
 
 /// Exit revert reason.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(
 	feature = "with-codec",
-	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
+	derive(
+		scale_codec::Encode,
+		scale_codec::Decode,
+		scale_codec::DecodeWithMemTracking,
+		scale_info::TypeInfo
+	)
 )]
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitRevert {
@@ -96,10 +111,15 @@ impl From<ExitRevert> for ExitReason {
 }
 
 /// Exit error reason.
-#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(
 	feature = "with-codec",
-	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
+	derive(
+		scale_codec::Encode,
+		scale_codec::Decode,
+		scale_codec::DecodeWithMemTracking,
+		scale_info::TypeInfo
+	)
 )]
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitError {
@@ -154,7 +174,7 @@ pub enum ExitError {
 
 	/// Other normal errors.
 	#[cfg_attr(feature = "with-codec", codec(index = 13))]
-	Other(String),
+	Other(Cow<'static, str>),
 
 	/// Nonce reached maximum value of 2^64-1
 	/// https://eips.ethereum.org/EIPS/eip-2681
@@ -169,10 +189,15 @@ impl From<ExitError> for ExitReason {
 }
 
 /// Exit fatal reason.
-#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(
 	feature = "with-codec",
-	derive(scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)
+	derive(
+		scale_codec::Encode,
+		scale_codec::Decode,
+		scale_codec::DecodeWithMemTracking,
+		scale_info::TypeInfo
+	)
 )]
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitFatal {
@@ -184,7 +209,7 @@ pub enum ExitFatal {
 	CallErrorAsFatal(ExitError),
 
 	/// Other fatal errors.
-	Other(String),
+	Other(Cow<'static, str>),
 }
 
 impl From<ExitFatal> for ExitReason {
